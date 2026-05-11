@@ -187,6 +187,21 @@ def test_context_relevance(backend_4_0):
     assert result == "irrelevant"
 
 
+def _compare_hallucination(result: list[dict], expected: list[dict]):
+    """Special function to compare the result and expected output for hallucination detection.
+
+    There are slight differences in explanations depending on where the test is run.
+    """
+    for r, e in zip(result, expected, strict=True):
+        assert r["response_begin"] == e["response_begin"]
+        assert r["response_end"] == e["response_end"]
+        assert r["response_text"] == e["response_text"]
+        assert r["faithfulness"] == e["faithfulness"]
+
+        # Specifically don't check the explanation due to mentioned differences.
+        # assert result["explanation"] == expected["explanation"]
+
+
 @pytest.mark.qualitative
 def test_hallucination_detection(backend):
     """Verify that the hallucination detection intrinsic functions properly."""
@@ -196,11 +211,11 @@ def test_hallucination_detection(backend):
     # First call triggers adapter loading
     result = rag.flag_hallucinated_content(assistant_response, docs, context, backend)
     _dump_output_json("hallucination_detection.json", result)
-    assert result == expected
+    _compare_hallucination(result, expected)
 
     # Second call hits a different code path from the first one
     result = rag.flag_hallucinated_content(assistant_response, docs, context, backend)
-    assert result == expected
+    _compare_hallucination(result, expected)
 
 
 @pytest.mark.qualitative
@@ -303,7 +318,7 @@ def test_hallucination_detection_resolve(backend):
     expected = _read_output_json("hallucination_detection.json")
 
     result = rag.flag_hallucinated_content(None, docs, context, backend)
-    assert result == expected
+    _compare_hallucination(result, expected)
 
 
 @pytest.mark.qualitative
