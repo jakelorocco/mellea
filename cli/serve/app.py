@@ -23,6 +23,7 @@ except ImportError as e:
     ) from e
 
 from mellea.backends.model_options import ModelOption
+from mellea.core import MelleaLogger
 from mellea.helpers.openai_compatible_helpers import (
     build_completion_usage,
     build_tool_calls,
@@ -41,6 +42,8 @@ from .models import (
 from .schema_converter import json_schema_to_pydantic
 from .streaming import stream_chat_completion_chunks
 from .utils import extract_finish_reason
+
+logger = MelleaLogger.get_logger()
 
 app = FastAPI(
     title="M serve OpenAI API Compatible Server",
@@ -265,11 +268,11 @@ def make_chat_endpoint(module):
                 message=f"Invalid request: {e!s}",
                 error_type="invalid_request_error",
             )
-        except Exception as e:
-            # Catch-all for any unexpected errors (including AttributeError)
+        except Exception:
+            logger.exception("Unhandled error in chat-completion handler")
             return create_openai_error_response(
                 status_code=500,
-                message=f"Internal server error: {e!s}",
+                message="Internal server error",
                 error_type="server_error",
             )
 
