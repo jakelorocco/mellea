@@ -228,6 +228,32 @@ _YAML_JSON_COMBOS_LIST = [
         # No Granite 4.1 version of this adapter at the selected Git commit
         base_model_id="ibm-granite/granite-4.0-micro",
     ),
+    YamlJsonCombo(
+        short_name="requirement_check",
+        inputs_file=_INPUT_JSON_DIR / "requirement_check.json",
+        task="requirement-check",
+        repo_id="ibm-granite/granitelib-core-r1.0",
+    ),
+    YamlJsonCombo(
+        short_name="requirement_check_alora",
+        inputs_file=_INPUT_JSON_DIR / "requirement_check.json",
+        task="requirement-check",
+        is_alora=True,
+        repo_id="ibm-granite/granitelib-core-r1.0",
+    ),
+    YamlJsonCombo(
+        short_name="uncertainty",
+        inputs_file=_INPUT_JSON_DIR / "uncertainty.json",
+        task="uncertainty",
+        repo_id="ibm-granite/granitelib-core-r1.0",
+    ),
+    YamlJsonCombo(
+        short_name="uncertainty_alora",
+        inputs_file=_INPUT_JSON_DIR / "uncertainty.json",
+        task="uncertainty",
+        is_alora=True,
+        repo_id="ibm-granite/granitelib-core-r1.0",
+    ),
     # gpt-oss-20b intrinsics (canned output tests only, no inference)
     YamlJsonCombo(
         short_name="gpt_oss_answerability",
