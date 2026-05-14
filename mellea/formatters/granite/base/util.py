@@ -250,7 +250,8 @@ def chat_completion_request_to_transformers_inputs(
 
     # generate() will fail with many different creative error messages if tokens aren't
     # on the right device.
-    input_tokens = input_tokens.to(model.device)  # type: ignore[union-attr]
+    if model is not None:
+        input_tokens = input_tokens.to(model.device)
     generate_input["input_tokens"] = input_tokens
 
     # The generate() method sometimes needs to know what is the integer ID
@@ -305,7 +306,7 @@ def chat_completion_request_to_transformers_inputs(
         if model is None:
             raise ValueError(
                 "Request specifies constrained decoding, but no "
-                "tokenizer object was passed to this function."
+                "model object was passed to this function."
             )
 
         if ll_tokenizer is None:
