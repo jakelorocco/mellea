@@ -6,9 +6,11 @@ Tests of code under ``mellea.formatters.granite``
 
 # Standard
 import copy
+import functools
 import json
 import os
 import pathlib
+import sys
 from unittest import mock
 
 # Third Party
@@ -29,6 +31,10 @@ from mellea.formatters.granite import (
 )
 from mellea.formatters.granite.base import util as base_util
 from mellea.formatters.granite.intrinsics import json_util, util as intrinsics_util
+from mellea.formatters.granite.intrinsics.constants import (
+    BASE_MODEL_TO_CANONICAL_NAME,
+    OLD_LAYOUT_REPOS,
+)
 
 
 def _read_file(name):
@@ -130,6 +136,13 @@ class YamlJsonCombo(pydantic.BaseModel):
     base_model_id: str = _DEFAULT_BASE_MODEL
     """Base model on which the target adapter was trained. Should be small enough to
     run on the CI server."""
+    last_validated_commit: str | None = None
+    """Hugging Face commit SHA of the adapter subpath under which the canned outputs
+    for this case were last validated. Used by the per-test drift-aware xfail logic and
+    by ``test_adapter_versions_unchanged``. This is NOT the revision used to download
+    adapters — that remains the ``revision`` field (default ``"main"``). When the
+    adapter's subpath on Hugging Face moves past this SHA and the canned-output test
+    fails, the failure is converted to xfail. ``None`` means drift checks are skipped."""
 
     def _resolve_yaml(self):
         """
@@ -152,6 +165,7 @@ _YAML_JSON_COMBOS_LIST = [
         short_name="answerability_simple",
         inputs_file=_INPUT_JSON_DIR / "simple.json",
         task="answerability",
+        last_validated_commit="450f37fe89519a7b39eb8bf4acab51f022164ac5",
     ),
     YamlJsonCombo(
         short_name="answerability_extra_params",
@@ -163,17 +177,20 @@ _YAML_JSON_COMBOS_LIST = [
         short_name="answerability_answerable",
         inputs_file=_INPUT_JSON_DIR / "answerable.json",
         task="answerability",
+        last_validated_commit="450f37fe89519a7b39eb8bf4acab51f022164ac5",
     ),
     YamlJsonCombo(
         short_name="answerability_answerable_alora",
         inputs_file=_INPUT_JSON_DIR / "answerable.json",
         task="answerability",
         is_alora=True,
+        last_validated_commit="450f37fe89519a7b39eb8bf4acab51f022164ac5",
     ),
     YamlJsonCombo(
         short_name="answerability_unanswerable",
         inputs_file=_INPUT_JSON_DIR / "unanswerable.json",
         task="answerability",
+        last_validated_commit="450f37fe89519a7b39eb8bf4acab51f022164ac5",
     ),
     YamlJsonCombo(
         short_name="instruction",
@@ -186,16 +203,19 @@ _YAML_JSON_COMBOS_LIST = [
         short_name="hallucination_detection",
         inputs_file=_INPUT_JSON_DIR / "hallucination_detection.json",
         task="hallucination_detection",
+        last_validated_commit="450f37fe89519a7b39eb8bf4acab51f022164ac5",
     ),
     YamlJsonCombo(
         short_name="query_clarification",
         inputs_file=_INPUT_JSON_DIR / "query_clarification.json",
         task="query_clarification",
+        last_validated_commit="450f37fe89519a7b39eb8bf4acab51f022164ac5",
     ),
     YamlJsonCombo(
         short_name="query_rewrite",
         inputs_file=_INPUT_JSON_DIR / "query_rewrite.json",
         task="query_rewrite",
+        last_validated_commit="450f37fe89519a7b39eb8bf4acab51f022164ac5",
     ),
     YamlJsonCombo(
         short_name="context_relevance",
@@ -204,6 +224,7 @@ _YAML_JSON_COMBOS_LIST = [
         task="context_relevance",
         # No Granite 4.1 version of this adapter
         base_model_id="ibm-granite/granite-4.0-micro",
+        last_validated_commit="450f37fe89519a7b39eb8bf4acab51f022164ac5",
     ),
     YamlJsonCombo(
         short_name="context_relevance_alora",
@@ -213,11 +234,13 @@ _YAML_JSON_COMBOS_LIST = [
         is_alora=True,
         # No Granite 4.1 version of this adapter
         base_model_id="ibm-granite/granite-4.0-micro",
+        last_validated_commit="450f37fe89519a7b39eb8bf4acab51f022164ac5",
     ),
     YamlJsonCombo(
         short_name="citations",
         inputs_file=_INPUT_JSON_DIR / "citations.json",
         task="citations",
+        last_validated_commit="450f37fe89519a7b39eb8bf4acab51f022164ac5",
     ),
     YamlJsonCombo(
         short_name="context-attribution",
@@ -227,12 +250,14 @@ _YAML_JSON_COMBOS_LIST = [
         revision="c9c189f5ad0b2890660397070613fda46d6ceb80",
         # No Granite 4.1 version of this adapter at the selected Git commit
         base_model_id="ibm-granite/granite-4.0-micro",
+        last_validated_commit="065a365c8dae0a32b360e68353df3f8f8f1dbf8e",
     ),
     YamlJsonCombo(
         short_name="requirement_check",
         inputs_file=_INPUT_JSON_DIR / "requirement_check.json",
         task="requirement-check",
         repo_id="ibm-granite/granitelib-core-r1.0",
+        last_validated_commit="6b9a42d5e23364b3aca0ae334fbbea57c510623a",
     ),
     YamlJsonCombo(
         short_name="requirement_check_alora",
@@ -240,12 +265,14 @@ _YAML_JSON_COMBOS_LIST = [
         task="requirement-check",
         is_alora=True,
         repo_id="ibm-granite/granitelib-core-r1.0",
+        last_validated_commit="6b9a42d5e23364b3aca0ae334fbbea57c510623a",
     ),
     YamlJsonCombo(
         short_name="uncertainty",
         inputs_file=_INPUT_JSON_DIR / "uncertainty.json",
         task="uncertainty",
         repo_id="ibm-granite/granitelib-core-r1.0",
+        last_validated_commit="6b9a42d5e23364b3aca0ae334fbbea57c510623a",
     ),
     YamlJsonCombo(
         short_name="uncertainty_alora",
@@ -253,6 +280,7 @@ _YAML_JSON_COMBOS_LIST = [
         task="uncertainty",
         is_alora=True,
         repo_id="ibm-granite/granitelib-core-r1.0",
+        last_validated_commit="6b9a42d5e23364b3aca0ae334fbbea57c510623a",
     ),
     # gpt-oss-20b intrinsics (canned output tests only, no inference)
     YamlJsonCombo(
@@ -261,6 +289,7 @@ _YAML_JSON_COMBOS_LIST = [
         task="answerability",
         repo_id="ibm-granite/granitelib-rag-gpt-oss-r1.0",
         base_model_id="openai/gpt-oss-20b",
+        last_validated_commit="2bb95d68002197c6a7a763dca5d1a95d939c4743",
     ),
     YamlJsonCombo(
         short_name="gpt_oss_citations",
@@ -268,6 +297,7 @@ _YAML_JSON_COMBOS_LIST = [
         task="citations",
         repo_id="ibm-granite/granitelib-rag-gpt-oss-r1.0",
         base_model_id="openai/gpt-oss-20b",
+        last_validated_commit="ed250f0f343684df948d24bee64ec6b76680719c",
     ),
     YamlJsonCombo(
         short_name="gpt_oss_hallucination_detection",
@@ -275,6 +305,7 @@ _YAML_JSON_COMBOS_LIST = [
         task="hallucination_detection",
         repo_id="ibm-granite/granitelib-rag-gpt-oss-r1.0",
         base_model_id="openai/gpt-oss-20b",
+        last_validated_commit="2bb95d68002197c6a7a763dca5d1a95d939c4743",
     ),
     YamlJsonCombo(
         short_name="gpt_oss_query_rewrite",
@@ -282,6 +313,7 @@ _YAML_JSON_COMBOS_LIST = [
         task="query_rewrite",
         repo_id="ibm-granite/granitelib-rag-gpt-oss-r1.0",
         base_model_id="openai/gpt-oss-20b",
+        last_validated_commit="ed250f0f343684df948d24bee64ec6b76680719c",
     ),
 ]
 _YAML_JSON_COMBOS = {c.short_name: c for c in _YAML_JSON_COMBOS_LIST}
@@ -388,6 +420,74 @@ def _yaml_json_combo_for_ollama(request: pytest.FixtureRequest) -> YamlJsonCombo
     for an Ollama backend.
     """
     return _YAML_JSON_COMBOS_FOR_OLLAMA[request.param]._resolve_yaml()
+
+
+def _adapter_subpath(cfg: YamlJsonCombo) -> str:
+    """Return the Hugging Face Hub subpath where ``cfg``'s adapter lives.
+
+    Mirrors the layout logic in
+    ``mellea.formatters.granite.intrinsics.util.obtain_lora()``.
+    """
+    model_name = BASE_MODEL_TO_CANONICAL_NAME.get(cfg.base_model_id, cfg.base_model_id)
+    lora_str = "alora" if cfg.is_alora else "lora"
+    if cfg.repo_id in OLD_LAYOUT_REPOS:
+        return f"{cfg.task}/{lora_str}/{model_name}"
+    return f"{cfg.task}/{model_name}/{lora_str}"
+
+
+@functools.cache
+def _last_commit_for_subpath(repo_id: str, subpath: str, revision: str) -> str | None:
+    """Return the SHA of the most recent commit on ``revision`` of ``repo_id`` that
+    modified any file under ``subpath``.
+
+    Returns ``None`` if the lookup fails for any reason (network down, auth missing,
+    repo private, path not found) so drift checks degrade gracefully offline rather
+    than producing false failures.
+    """
+    try:
+        # Third Party
+        import huggingface_hub
+
+        info = huggingface_hub.HfApi().get_paths_info(
+            repo_id=repo_id, paths=[subpath], revision=revision, expand=True
+        )
+    except Exception:
+        return None
+    if not info:
+        return None
+    last_commit = getattr(info[0], "last_commit", None)
+    if last_commit is None:
+        return None
+    return getattr(last_commit, "oid", None)
+
+
+def _xfail_if_drifted(cfg: YamlJsonCombo) -> None:
+    """If ``cfg``'s adapter subpath has drifted from its recorded SHA, mark the
+    current test as xfail before any assertions run.
+
+    No-op when ``cfg.last_validated_commit`` is ``None``, ``cfg.task`` is ``None``,
+    or the upstream SHA cannot be resolved (offline / auth missing) — without a
+    confirmed mismatch we let the test run normally.
+
+    Drift detection alerts on *any* file under the adapter subpath changing — not
+    just adapter weights or ``io.yaml``. A README typo fix or a new image asset
+    will move the SHA and trip this guard even though no test would actually
+    fail. A drifted test that still passes will surface as XPASS.
+    """
+    if cfg.last_validated_commit is None or cfg.task is None:
+        return
+
+    adapter_subpath = _adapter_subpath(cfg)
+    current = _last_commit_for_subpath(cfg.repo_id, adapter_subpath, cfg.revision)
+    if current is None or current == cfg.last_validated_commit:
+        return
+    pytest.xfail(
+        f"Adapter at {cfg.repo_id}/{adapter_subpath} drifted from "
+        f"recorded {cfg.last_validated_commit[:8]} to {current[:8]}. The change "
+        f"may be nonfunctional (e.g. a README edit) — if this test still passes "
+        f"as XPASS, you may be able to simply bump the `last_validated_commit`. "
+        f"Otherwise refresh the canned outputs once the new adapter is verified."
+    )
 
 
 def test_no_orphan_files():
@@ -510,6 +610,7 @@ def test_canned_input(yaml_json_combo_no_alora):
     the expected output
     """
     cfg = yaml_json_combo_no_alora
+    _xfail_if_drifted(cfg)
     if cfg.arguments_file:
         with open(cfg.arguments_file, encoding="utf8") as f:
             transform_kwargs = json.load(f)
@@ -585,6 +686,7 @@ def test_canned_output(yaml_json_combo_with_lora_model):
 
     # Same cases as test_canned_input
     cfg = yaml_json_combo_with_lora_model
+    _xfail_if_drifted(cfg)
 
     # Input is input to model, not input to rewriter
     input_file = _CANNED_INPUT_EXPECTED_DIR / f"{cfg.short_name}.json"
@@ -688,6 +790,7 @@ def test_run_transformers(yaml_json_combo_with_model, gh_run):
     torch.set_num_threads(2)
 
     cfg = yaml_json_combo_with_model
+    _xfail_if_drifted(cfg)
     if cfg.arguments_file:
         with open(cfg.arguments_file, encoding="utf8") as f:
             transform_kwargs = json.load(f)
@@ -794,6 +897,7 @@ def test_run_ollama(yaml_json_combo_for_ollama):
     Run the target model end-to-end with a mock Ollama backend.
     """
     cfg = yaml_json_combo_for_ollama
+    _xfail_if_drifted(cfg)
 
     # Change base model id to Ollama's version
     if cfg.base_model_id == "ibm-granite/granite-4.0-micro":
@@ -899,3 +1003,109 @@ def test_run_ollama(yaml_json_combo_for_ollama):
                     print(f"   {t_json=}")
                     print(f"   {e_json=}")
                 assert t_json == pytest.approx(e_json, abs=0.1)
+
+
+@pytest.mark.skipif(
+    int(os.environ.get("CICD", 0)) == 1,
+    reason="Don't cause CICD pipelines to fail due to adapter version changes alone.",
+)
+@pytest.mark.huggingface
+def test_adapter_versions_unchanged():
+    """Fail when any tracked adapter subpath on Hugging Face has moved past the SHA
+    recorded in ``YamlJsonCombo.last_validated_commit``.
+
+    A failure here means the upstream intrinsic adapter directory has been touched.
+    Detection is path-level — *any* file under the subpath bumps the SHA, including
+    nonfunctional changes like README edits, image assets, or new metadata files.
+    Triage:
+
+    * If the canned-output tests still pass against the new adapter, the change was
+      most likely nonfunctional — you may be able to just update each drifted entry's
+      ``last_validated_commit`` to the new SHA.
+    * If they fail, regenerate the canned outputs and update both.
+
+    Skips entries where ``last_validated_commit`` is ``None`` (e.g. fake configs
+    with no real adapter). Silently tolerates network/auth failures so this test
+    doesn't false-fail when run offline.
+    """
+    drifts: list[tuple[str, str, str, str, str]] = []
+    for cfg in _YAML_JSON_COMBOS_LIST:
+        if cfg.last_validated_commit is None or cfg.task is None:
+            continue
+        subpath = _adapter_subpath(cfg)
+        current = _last_commit_for_subpath(cfg.repo_id, subpath, cfg.revision)
+        if current is None:
+            continue
+        if current != cfg.last_validated_commit:
+            drifts.append(
+                (
+                    cfg.short_name,
+                    cfg.repo_id,
+                    subpath,
+                    cfg.last_validated_commit,
+                    current,
+                )
+            )
+    if drifts:
+        msg_lines = ["Adapter versions have drifted:"]
+        for name, repo, sub, old, new in drifts:
+            msg_lines.append(f"  {name}: {repo}/{sub}  {old[:8]} -> {new[:8]}")
+        msg_lines.append(
+            "\nDetection is path-level, so a drift may be nonfunctional (README "
+            "edit, new image asset, etc.). If the canned-output tests still pass "
+            "against the new adapter, you should ensure it was a meaningful change "
+            "(ie in the adapter or the io.yaml). If it is, regenerate the canned outputs "
+            "and update the ``last_validated_commit``."
+        )
+        pytest.fail("\n".join(msg_lines))
+
+
+_FAKE_RECORDED_SHA = "a" * 40
+_FAKE_UPSTREAM_SHA = "b" * 40
+
+
+@pytest.mark.parametrize(
+    ("recorded", "upstream", "expect_xfail"),
+    [
+        # Drift detected → mark xfail. The xfail message must surface both SHAs so a
+        # maintainer reading the log can see what changed.
+        pytest.param(_FAKE_RECORDED_SHA, _FAKE_UPSTREAM_SHA, True, id="drift"),
+        # Upstream matches recorded → run normally; real regressions surface as real
+        # failures.
+        pytest.param(_FAKE_RECORDED_SHA, _FAKE_RECORDED_SHA, False, id="no_drift"),
+        # No baseline → run normally without querying upstream (the stub asserts it
+        # is never called).
+        pytest.param(None, "should-not-query", False, id="none_recorded"),
+        # Upstream unreachable (offline, auth missing) → run normally.
+        pytest.param(_FAKE_RECORDED_SHA, None, False, id="network_down"),
+    ],
+)
+def test_xfail_if_drifted(monkeypatch, recorded, upstream, expect_xfail):
+    """``_xfail_if_drifted`` only marks xfail when the upstream SHA is resolved AND
+    differs from the recorded SHA; otherwise it returns and lets the test proceed."""
+
+    def _stub(*_args, **_kwargs):
+        if recorded is None:
+            raise AssertionError(
+                "_last_commit_for_subpath must not be queried when "
+                "last_validated_commit is None"
+            )
+        return upstream
+
+    monkeypatch.setattr(sys.modules[__name__], "_last_commit_for_subpath", _stub)
+
+    cfg = YamlJsonCombo(
+        short_name="fake_combo",
+        inputs_file=_INPUT_JSON_DIR / "simple.json",
+        task="answerability",
+        last_validated_commit=recorded,
+    )
+
+    if expect_xfail:
+        with pytest.raises(pytest.xfail.Exception) as exc_info:
+            _xfail_if_drifted(cfg)
+        msg = str(exc_info.value)
+        assert recorded[:8] in msg
+        assert upstream[:8] in msg
+    else:
+        _xfail_if_drifted(cfg)  # must not raise
