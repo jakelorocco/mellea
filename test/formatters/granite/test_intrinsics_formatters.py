@@ -896,8 +896,14 @@ def test_run_ollama(yaml_json_combo_for_ollama):
     """
     Run the target model end-to-end with a mock Ollama backend.
     """
-    cfg = yaml_json_combo_for_ollama
-    _xfail_if_drifted(cfg)
+    # The combos in _YAML_JSON_COMBOS_LIST are module-scoped singletons reused
+    # across tests, so we copy before doing the Ollama-specific base-model-id
+    # swap below.
+    cfg = yaml_json_combo_for_ollama.model_copy()
+
+    # Explicitly don't check drift here. Ollama models don't have their own yaml combo
+    # that we can track.
+    # _xfail_if_drifted(cfg)
 
     # Change base model id to Ollama's version
     if cfg.base_model_id == "ibm-granite/granite-4.0-micro":
